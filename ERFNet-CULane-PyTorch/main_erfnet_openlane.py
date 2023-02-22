@@ -1,4 +1,5 @@
 import os
+import os.path as ops
 import time
 import shutil
 import torch
@@ -15,6 +16,7 @@ import dataset.openlane_dataset as ds
 from options.options import parser
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
+import matplotlib.pyplot as plt
 
 best_mIoU = 0
 
@@ -36,30 +38,32 @@ def main():
     args = parser.parse_args()
     args.org_h = 1280
     args.org_w = 1920
-    args.crop_y = 500
+    args.crop_y = 0
     args.resize_h = 400
     args.resize_w = 600
-    # args.vgg_mean = np.array([0.485, 0.456, 0.406])
-    # args.vgg_std = np.array([0.229, 0.224, 0.225])
-    args.vgg_mean = np.array([103.939, 116.779, 123.68])
-    args.vgg_std = np.array([1., 1., 1.])
-    args.print_freq = 100
-    
-    args.batch_size = 8
+    args.vgg_mean = np.array([0.485, 0.456, 0.406])
+    args.vgg_std = np.array([0.229, 0.224, 0.225])
+    # args.vgg_mean = np.array([103.939, 116.779, 123.68])
+    # args.vgg_std = np.array([1., 1., 1.])
 
     os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(str(gpu) for gpu in args.gpus)
     args.gpus = len(args.gpus)
     args.evaluate = False
-    # args.resume = model_save_folder + '/_erfnet_checkpoint.pth.tar'
+    # args.resume = model_save_folder + '/_erfnet_checkpoint_base.pth.tar'
     args.resume = False
 
     # if args.no_partialbn:
     #     sync_bn.Synchronize.init(args.gpus)
 
-    args.dataset = 'openlane'
+    args.dataset = 'sim3d'
     num_class = 23
     args.num_class = num_class-1
     ignore_label = 255
+
+    args.start_epoch = 0
+    args.epochs = 14
+    args.print_freq = 1000
+    args.batch_size = 8
 
     model = models.ERFNet(num_class, partial_bn=not args.no_partialbn)
     # input_mean = model.input_mean
@@ -112,7 +116,9 @@ def main():
     # criterion_exist = torch.nn.BCELoss().cuda()
     optimizer = torch.optim.SGD(model.parameters(), args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
     evaluator = EvalSegmentation(num_class, ignore_label)
-    writer = SummaryWriter(directory + '/tf_log')
+    log_dir = directory + '/tf_log'
+    os.makedirs(log_dir, exist_ok=True)
+    writer = SummaryWriter(log_dir=log_dir)
     if args.evaluate:
         validate(val_loader, model, criterion, 0, evaluator, True)
         return
@@ -122,6 +128,7 @@ def main():
 
         # train for one epoch
         train(train_loader, model, criterion, optimizer, epoch, writer)
+        # break
 
         # evaluate on validation set
         if (epoch + 1) % args.eval_freq == 0 or epoch == args.epochs - 1:
@@ -155,12 +162,30 @@ def train(train_loader, model, criterion, optimizer, epoch, writer):
     model.train()
 
     end = time.time()
-    for i, (input, target, idx) in enumerate(train_loader):
+    for i, (input, target, _, idx) in enumerate(train_loader):
         # measure data loading time
         data_time.update(time.time() - end)
 
         target = target.cuda()
         input = input.contiguous()
+        # print('i', input[0].shape)
+        # print('t', target.shape)
+        # # Convert tensor to numpy array
+        # tar_array = target[0].permute(0, 1).numpy()
+        # inp_array = input[0].permute(1, 2, 0).numpy()
+        # fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10,5))
+
+        # # Show the first image in the left subplot
+        # ax1.imshow(tar_array)
+        # ax1.set_title('target')
+
+        # # Show the second image in the right subplot
+        # ax2.imshow(inp_array)
+        # ax2.set_title('input')
+
+        # # Display the figure
+        # plt.show()
+        # break
         input_var = torch.autograd.Variable(input)
         target_var = torch.autograd.Variable(target)
 
@@ -168,9 +193,7 @@ def train(train_loader, model, criterion, optimizer, epoch, writer):
         output = model(input_var, no_lane_exist=True) # output_mid
         loss = criterion(torch.nn.functional.log_softmax(output, dim=1), target_var)
         # print(output_exist.data.cpu().numpy().shape)
-        lr = optimizer.param_groups[0]['lr']
-        writer.add_scalar('train/learning rate', lr, i)
-        writer.add_scalar('train/seg_loss', loss, i)
+        writer.add_scalar('training_loss/iteration', loss.item(), epoch * len(train_loader) + i)
 
         # measure accuracy and record loss
         losses.update(loss.item(), input.size(0))
@@ -210,7 +233,7 @@ def validate(val_loader, model, criterion, iter, evaluator, evaluate=False):
 
     end = time.time()
     with torch.no_grad():
-        for i, (input, target, idx) in enumerate(val_loader):
+        for i, (input, target, img_name, idx) in enumerate(val_loader):
             target = target.cuda()
             input = input.contiguous()
             # input_var = torch.autograd.Variable(input, volatile=True)
@@ -223,15 +246,23 @@ def validate(val_loader, model, criterion, iter, evaluator, evaluate=False):
             output = F.softmax(output, dim=1)
             pred = output.data.cpu().numpy()
             # save output visualization
+            
             if evaluate:
                 for cnt in range(len(idx)):
+                    img_path = img_name[cnt].split('/')
+                    img_file = img_path.pop()
+                    save_dir = directory + '/output/' + ops.join(*img_path)
+                    if not os.path.exists(save_dir):
+                        os.makedirs(save_dir)
                     prob_map = np.max(pred[cnt, 1:, :, :], axis=0)
-                    prob_map = (prob_map * 255).astype(np.int)
-                    cv2.imwrite(directory + '/output/image_{}.png'.format(idx[cnt]), prob_map)
+                    prob_map = (prob_map * 255).astype(int)
+                    # cv2.imwrite(directory + '/output/image_{}.png'.format(idx[cnt]), prob_map)
+                    cv2.imwrite(ops.join(save_dir, img_file), prob_map)
             else:
                 prob_map = np.max(pred[0, 1:, :, :], axis=0)
                 prob_map = (prob_map * 255).astype(int)
                 cv2.imwrite(directory + '/output/image_{}.png'.format(idx[0]), prob_map)
+                # cv2.imwrite(ops.join(directory, str(img_name)), prob_map)
 
             # measure accuracy and record loss
             pred = pred.transpose(0, 2, 3, 1)

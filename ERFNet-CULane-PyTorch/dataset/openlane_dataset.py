@@ -83,8 +83,10 @@ class LaneDataset(Dataset):
         #     image, label = self.transform((image, label))
         #     image = torch.from_numpy(image).permute(2, 0, 1).contiguous().float()
         #     label = torch.from_numpy(label).contiguous().long()
-
-        return image, label_map, idx
+        # /home/liang/Datasets/OpenLane/img/validation/segment-16979882728032305374_2719_000_2739_000_with_camera_labels/151865422154188200.jpg
+        img_name = ops.join(*img_name.split('/')[6:])
+        # print(img_name)
+        return image, label_map, img_name, idx
 
     def init_dataset_3D(self, dataset_base_dir, txt_file_path):
         """
