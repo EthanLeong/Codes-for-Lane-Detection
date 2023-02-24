@@ -48,22 +48,23 @@ def main():
 
     os.environ["CUDA_VISIBLE_DEVICES"] = ','.join(str(gpu) for gpu in args.gpus)
     args.gpus = len(args.gpus)
-    args.evaluate = False
-    # args.resume = model_save_folder + '/_erfnet_checkpoint_base.pth.tar'
-    args.resume = False
+    args.evaluate = True
+    args.resume = model_save_folder + '_erfnet_model_best01.pth.tar' # '/_erfnet_checkpoint_base.pth.tar'
+    # args.resume = False
 
     # if args.no_partialbn:
     #     sync_bn.Synchronize.init(args.gpus)
 
-    args.dataset = 'sim3d'
-    num_class = 23
+    args.dataset = 'openlane'
+    # maximum lane in openlane is 23
+    num_class = 2
     args.num_class = num_class-1
     ignore_label = 255
 
     args.start_epoch = 0
     args.epochs = 14
     args.print_freq = 1000
-    args.batch_size = 8
+    args.batch_size = 1
 
     model = models.ERFNet(num_class, partial_bn=not args.no_partialbn)
     # input_mean = model.input_mean

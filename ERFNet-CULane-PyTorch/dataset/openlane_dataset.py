@@ -51,9 +51,8 @@ class LaneDataset(Dataset):
             # skip the class label beyond consideration
             if gt_labels[i] <= 0 or gt_labels[i] > self.num_class:
                 continue
-
             for j in range(len(coords) - 1):
-                label_map = cv2.line(label_map, coords[j], coords[j+1], color=np.array(gt_labels[i]).item(), thickness=3)
+                label_map = cv2.line(label_map, (int(coords[j][0]), int(coords[j][1])), (int(coords[j+1][0]), int(coords[j+1][1])), color=gt_labels[i], thickness=3)
         label_map = Image.fromarray(label_map)
         
         label_map = F.crop(label_map, self.h_crop, 0, self.h_org - self.h_crop, self.w_org)
@@ -120,7 +119,7 @@ class LaneDataset(Dataset):
                 gt_class = []
                 gt_lane_pts = []
                 for i in range(len(info_dict['lane_lines'])):
-                    l = [(int(x), int(y)) for x, y in zip(info_dict['lane_lines'][i]['uv'][0], info_dict['lane_lines'][i]['uv'][1]) if x >= 0]
+                    l = [(x, y) for x, y in zip(info_dict['lane_lines'][i]['uv'][0], info_dict['lane_lines'][i]['uv'][1]) if x >= 0]
                     if (len(l)>3):
                     # gt_lane_pts.append(list(set(l)))
                         gt_lane_pts.append(l)
